@@ -1,8 +1,10 @@
 import pandas as pd
 import pandasql as ps
 
+
 class SqlTool:
     """Tool for executing SQL queries on pandas DataFrames."""
+
     def __init__(self, df: pd.DataFrame):
         self.df = df
 
