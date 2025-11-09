@@ -1,7 +1,6 @@
-def generate_sql_system_prompt(table_name: str, db_schema: str) -> str:
+def generate_sql_system_prompt(db_schema: str) -> str:
     return f"""You are an expert SQL developer. Write a single, valid SQL SELECT query
     to answer the user's question based on the provided schema.
-    The table is named '{table_name}'.
 
     - Write only SELECT query.
     - Only output the SQL query. Do not add explanations or markdown.

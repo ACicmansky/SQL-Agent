@@ -4,14 +4,15 @@ import pandas as pd
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from prompts import (
+
+from src.tools.sql_tool import SqlTool
+
+from .prompts import (
     generate_answer_error_prompt,
     generate_answer_prompt,
     generate_sql_human_prompt,
     generate_sql_system_prompt,
 )
-
-from tools.sql_tool import SqlTool
 
 
 class AgentState(TypedDict):
@@ -57,13 +58,13 @@ class AgentNodes:
         else:
             prompt = generate_answer_prompt(question, sql_result)
         response = self.llm.invoke([HumanMessage(content=prompt)])
-        return {"answer": response.content}
+        return {"answer": str(response.content)}
 
 
-def build_agent_graph(df: pd.DataFrame, db_schema: str) -> StateGraph[AgentState]:
+def build_agent_graph(df: pd.DataFrame, db_schema: str, table_name: str) -> StateGraph[AgentState]:
     """Builds and compiles the LangGraph agent."""
     llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
-    sql_tool = SqlTool(df)
+    sql_tool = SqlTool(df, table_name)
     nodes = AgentNodes(sql_tool, llm, db_schema)
 
     workflow = StateGraph(AgentState)
