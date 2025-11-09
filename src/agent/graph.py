@@ -47,6 +47,7 @@ class AgentNodes:
         print(f"Node: {self.execute_sql.__name__}")
         query = state["sql_query"]
         result = self.sql_tool.execute_query(query)
+        print(f"Query result: {result}")
         return {"sql_result": result}
 
     def generate_answer(self, state: AgentState) -> AgentState:

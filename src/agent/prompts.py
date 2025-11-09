@@ -17,7 +17,7 @@ def generate_sql_human_prompt(question: str) -> str:
 def generate_answer_prompt(question: str, sql_result: str) -> str:
     return f"""A user asked: '{question}'.
     A SQL query returned:\n\n{sql_result}\n\n
-    Provide a clear, natural language answer based on these results."""
+    Provide a clear, natural language answer based on these results with exact numbers."""
 
 
 def generate_answer_error_prompt(question: str, sql_result: str) -> str:

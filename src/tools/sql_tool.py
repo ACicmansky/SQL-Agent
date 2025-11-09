@@ -15,7 +15,7 @@ class SqlTool:
         env = {self.table_name: self.df}
         try:
             result = ps.sqldf(query, env)
-            return result.to_markdown(index=False)
+            return result.to_string(index=False)
         except Exception as e:
             print(f"Error executing query: {e}")
             return str(e)
