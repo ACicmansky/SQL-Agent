@@ -8,7 +8,7 @@ from langgraph.graph import END, StateGraph
 from config import LLM_MODEL, MAX_RETRIES, MAX_CONVERSATION_HISTORY 
 from src.tools.sql_tool import SqlTool
 
-from .prompts import (
+from .agent_prompts import (
     answer_prompt,
     sql_correction_system_prompt,
     sql_human_prompt,
