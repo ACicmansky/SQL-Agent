@@ -1,11 +1,11 @@
-from typing import TypedDict
+from typing import List, TypedDict
 
 import pandas as pd
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 
-from config import LLM_MODEL, MAX_RETRIES
+from config import LLM_MODEL, MAX_RETRIES, MAX_CONVERSATION_HISTORY 
 from src.tools.sql_tool import SqlTool
 
 from .prompts import (
@@ -20,6 +20,7 @@ class AgentState(TypedDict):
     """Defines the state of the agent."""
 
     question: str
+    chat_history: List[BaseMessage]
     sql_query: str
     sql_result: str
     answer: str
@@ -34,6 +35,9 @@ class AgentNodes:
         self.sql_tool = sql_tool
         self.llm = llm
         self.db_schema = db_schema
+
+    def __get_history(self, history: List[BaseMessage]) -> str:
+        return "\n".join([f"{msg.type}: {msg.content}" for msg in history[-MAX_CONVERSATION_HISTORY:]])
 
     def generate_sql(self, state: AgentState) -> AgentState:
         print("Node: generate_sql")

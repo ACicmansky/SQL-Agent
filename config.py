@@ -5,4 +5,4 @@ LLM_MODEL = "gpt-4o-mini"
 MAX_RETRIES = 3
 
 # Maximum number of rows to return in SQL query result to avoid token limits
-MAX_OUTPUT_ROWS = 50
+MAX_ROWS = 100
