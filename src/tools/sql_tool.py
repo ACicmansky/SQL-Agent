@@ -1,7 +1,7 @@
 import pandas as pd
 import pandasql as ps
 
-MAX_ROWS_TO_RETURN = 100
+from config import MAX_OUTPUT_ROWS
 
 
 class SqlTool:
@@ -18,13 +18,13 @@ class SqlTool:
         try:
             result = ps.sqldf(query, env)
             result_len = len(result)
-            if result_len > MAX_ROWS_TO_RETURN:
+            if result_len > MAX_OUTPUT_ROWS:
                 # Result is too large, return summary
                 summary = f"""
                 The query returned {result_len} rows, which is too large to display.
-                Here are the first {MAX_ROWS_TO_RETURN} rows:
+                Here are the first {MAX_OUTPUT_ROWS} rows:
 
-                {result.head(MAX_ROWS_TO_RETURN).to_string(index=False)}
+                {result.head(MAX_OUTPUT_ROWS).to_string(index=False)}
 
                 Here is a statistical summary of the numeric columns:
 
