@@ -2,6 +2,8 @@
 
 An intelligent SQL assistant that uses natural language processing and plan-based execution to help non-technical users query databases and create visualizations through conversational interactions.
 
+> 📄 **For detailed project overview and objectives, see [Project Proposal.pdf](Project%20Proposal.pdf)**
+
 ## 🌟 Features
 
 ### Core Capabilities
@@ -314,6 +316,6 @@ showing significant growth over the previous year.
 
 **Current Version**: 0.1.0 (Alpha)  
 **Status**: ✅ Fully functional for development/demo  
-**Production Ready**: ❌ Not yet (see limitations)
+**Production Ready**: ❌ Not yet
 
 ---
