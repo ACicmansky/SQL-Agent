@@ -1,9 +1,20 @@
 [project]
 name = "sql-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered SQL assistant with plan-based execution for natural language data queries and visualization"
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [
+    { name = "Andrej Čičmanský", email = "andrej.cicmansky@gmail.com" }
+]
+keywords = ["ai", "sql", "langchain", "langgraph", "data-analysis", "nlp", "chatbot"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "gradio>=5.49.1",
     "langchain>=1.0.5",
@@ -25,10 +36,34 @@ line-length = 110
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B"]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "W",   # pycodestyle warnings
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = []
 
 [tool.black]
 line-length = 110
 
 [project.optional-dependencies]
-dev = ["pre-commit"]
+dev = [
+    "pre-commit>=4.4.0",
+    "ruff>=0.8.0",
+    "black>=24.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ACicmansky/sql-agent"
+Documentation = "https://github.com/ACicmansky/sql-agent/blob/main/README.md"
+Repository = "https://github.com/ACicmansky/sql-agent"
+
+[project.scripts]
+sql-agent = "main:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
