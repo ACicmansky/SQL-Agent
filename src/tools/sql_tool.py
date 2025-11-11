@@ -1,7 +1,7 @@
+import re
+
 import pandas as pd
 import pandasql as ps
-import re
-from typing import Union
 
 from config import MAX_ROWS
 
@@ -16,25 +16,27 @@ class SqlTool:
     def __sanitize_query(self, query: str) -> str:
         """Performs security checks and adds a LIMIT clause to the SQL query."""
         # 1. Check for dangerous keywords
-        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE']
+        dangerous_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE"]
         for keyword in dangerous_keywords:
-            if re.search(r'\b' + keyword + r'\b', query, re.IGNORECASE):
-                raise ValueError(f"Dangerous SQL keyword '{keyword}' detected. Only SELECT statements are allowed.")
-        
+            if re.search(r"\b" + keyword + r"\b", query, re.IGNORECASE):
+                raise ValueError(
+                    f"Dangerous SQL keyword '{keyword}' detected. Only SELECT statements are allowed."
+                )
+
         # 2. Enforce SELECT
-        if not re.search(r'^\s*SELECT', query, re.IGNORECASE):
+        if not re.search(r"^\s*SELECT", query, re.IGNORECASE):
             raise ValueError("Query does not start with SELECT. Only read-only queries are allowed.")
-        
+
         # 3. Add a LIMIT clause
-        if not re.search(r'\bLIMIT\b', query, re.IGNORECASE):
+        if not re.search(r"\bLIMIT\b", query, re.IGNORECASE):
             query = query.strip()
-            if query.endswith(';'):
+            if query.endswith(";"):
                 query = query[:-1]
             query += f" LIMIT {MAX_ROWS}"
 
         return query
 
-    def execute_query(self, query: str) -> Union[pd.DataFrame, str]:
+    def execute_query(self, query: str) -> pd.DataFrame | str:
         """
         Sanitizes and executes the SQL query, returning a DataFrame on success
         or an error string on failure.
