@@ -4,17 +4,15 @@ import pandas as pd
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
 
 from config import LLM_MODEL, MAX_CONVERSATION_HISTORY, MAX_RETRIES
 from src.tools.sql_tool import SqlTool
 from src.tools.visualization_tool import VisualizationTool
 
 from .agent_prompts import (
-    answer_prompt,
-    route_question_system_prompt,
-    sql_correction_system_prompt,
-    sql_system_prompt,
+    final_answer_synthesis_prompt,
+    planner_system_prompt,
+    step_sql_generation_prompt,
 )
 
 
@@ -23,19 +21,14 @@ class AgentState(TypedDict):
 
     question: str
     chat_history: list[BaseMessage]
-    intent: str
-    sql_query: str
     dataframe_result: pd.DataFrame | None
     final_answer: str
     chart_image_path: str | None
     error: str | None
     retries: int
-
-
-class RouterQuery(BaseModel):
-    """Routes user query to the appropriate tool."""
-
-    intent: str = Field(..., description="The tool to use, either 'query_database' or 'visualize_data'.")
+    plan: list[str]
+    current_step: int
+    step_results: list[str]
 
 
 class AgentNodes:
@@ -45,158 +38,136 @@ class AgentNodes:
         self.sql_tool = sql_tool
         self.vis_tool = vis_tool
         self.llm = llm
-        self.router_llm = llm.with_structured_output(RouterQuery)
         self.db_schema = db_schema
 
-    def __get_history(self, history: list[BaseMessage]) -> str:
+    def _get_history(self, history: list[BaseMessage]) -> str:
         return "\n".join([f"{msg.type}: {msg.content}" for msg in history[-MAX_CONVERSATION_HISTORY:]])
 
-    def route_question(self, state: AgentState) -> AgentState:
-        print("Node: route_question")
-        history_with_question = state["chat_history"] + [HumanMessage(content=state["question"])]
-
-        route = self.router_llm.invoke(
-            [
-                SystemMessage(
-                    content=route_question_system_prompt(
-                        self.__get_history(history_with_question), state["question"]
-                    )
-                )
-            ]
+    def planner(self, state: AgentState):
+        print("Node: planner")
+        prompt = planner_system_prompt(
+            state["question"], self._get_history(state["chat_history"]), self.db_schema
         )
-        print(f"Router decided intent: {route.intent}")
-        return {"intent": route.intent, "retries": 0}
-
-    def generate_sql(self, state: AgentState):
-        print("Node: generate_sql")
-        history_with_question = state["chat_history"] + [HumanMessage(content=state["question"])]
-
-        retries = state.get("retries", 0)
-
-        if retries > 0:
-            print(f"Correction attempt: {retries}")
-            prompt = sql_correction_system_prompt(
-                state["question"],
-                state["sql_query"],
-                state["error"],
-                self.__get_history(history_with_question),
-                self.db_schema,
-            )
-        else:
-            prompt = sql_system_prompt(
-                state["question"], self.__get_history(history_with_question), self.db_schema
-            )
-
         response = self.llm.invoke([SystemMessage(content=prompt)])
-        sql_query = response.content.strip().replace("```sql", "").replace("```", "")
-        return {"sql_query": sql_query}
+        # Parse the numbered list from response into a Python list
+        plan = [step.strip() for step in response.content.split("\n") if step.strip() and step[0].isdigit()]
+        print(f"Generated Plan:\n{plan}")
+        return {"plan": plan, "current_step": 0, "step_results": []}
 
-    def execute_sql(self, state: AgentState) -> AgentState:
-        print("Node: execute_sql")
-        query = state["sql_query"]
-        result = self.sql_tool.execute_query(query)
-        if isinstance(result, str):
-            return {"error": result, "retries": state.get("retries", 0) + 1}
-        return {"dataframe_result": result, "error": None}
+    def execute_step(self, state: AgentState):
+        print(f"Node: execute_step (Step {state['current_step'] + 1})")
+        plan = state["plan"]
+        current_step_index = state["current_step"]
+        step_instruction = plan[current_step_index]
 
-    def execute_visualization(self, state: AgentState) -> AgentState:
-        print("Node: execute_visualization")
-        df = state["dataframe_result"]
-        if df is None or df.empty:
-            return {"error_message": "Cannot create a visualization from empty or invalid data."}
+        # Check if this is a final synthesis/visualization step that doesn't need SQL
+        if any(
+            keyword in step_instruction.lower()
+            for keyword in ["synthesize", "chart", "visualize", "plot", "draw"]
+        ):
+            print("Step is for synthesis/visualization, skipping SQL execution.")
+            return {"current_step": current_step_index + 1}
 
-        path = self.vis_tool.generate_chart(df, state["question"])
-        if "Error:" in path:
-            return {"error_message": path}
-        return {"chart_image_path": path}
+        previous_results_str = "\n".join(state["step_results"])
+        sql_prompt = step_sql_generation_prompt(step_instruction, previous_results_str, self.db_schema)
 
-    def generate_answer(self, state: AgentState):
-        print("Node: generate_answer")
-        history_with_question = state["chat_history"] + [HumanMessage(content=state["question"])]
-        df = state["dataframe_result"]
-        table_string = df.to_string(index=False) if df is not None and not df.empty else "No data available."
+        retries = 0
+        while retries <= MAX_RETRIES:
+            sql_query = (
+                self.llm.invoke([SystemMessage(content=sql_prompt)])
+                .content.strip()
+                .replace("```sql", "")
+                .replace("```", "")
+            )
+            result = self.sql_tool.execute_query(sql_query)
 
-        response = self.llm.invoke(
-            [
-                SystemMessage(
-                    content=answer_prompt(
-                        state["question"],
-                        table_string,
-                        self.__get_history(history_with_question),
-                        state.get("chart_image_path") is not None,
-                    )
+            if isinstance(result, pd.DataFrame):
+                step_results = state["step_results"] + [result.to_markdown(index=False)]
+                return {
+                    "step_results": step_results,
+                    "current_step": current_step_index + 1,
+                    "dataframe_result": result,
+                }
+            else:
+                retries += 1
+                print(f"SQL execution failed. Attempt {retries}/{MAX_RETRIES}. Error: {result}")
+                sql_prompt = step_sql_generation_prompt(
+                    f"""FAILED ATTEMPT. The previous query '{sql_query}' failed with the error: {result}.
+                    Please fix it. Original instruction: {step_instruction}""",
+                    previous_results_str,
+                    self.db_schema,
                 )
-            ]
-        )
-        return {"final_answer": response.content}
 
-    def handle_failure(self, state: AgentState) -> AgentState:
+        return {"error": f"Failed to execute step '{step_instruction}' after {MAX_RETRIES} attempts."}
+
+    def generate_final_answer(self, state: AgentState):
+        print("Node: generate_final_answer")
+        if any(
+            keyword in state["plan"][-2].lower() or keyword in state["plan"][-1].lower()
+            for keyword in ["chart", "visualize", "plot", "draw"]
+        ):
+            print("Visualization requested.")
+            df_for_viz = state.get("dataframe_result")
+            if df_for_viz is not None and not df_for_viz.empty:
+                path = self.vis_tool.generate_chart(df_for_viz, state["question"])
+                if "Error:" in path:
+                    return {"error": path}
+                state["chart_image_path"] = path
+            else:
+                print("Warning: Visualization requested but no data is available.")
+
+        prompt = final_answer_synthesis_prompt(state["question"], state["plan"], state["step_results"])
+        response = self.llm.invoke([SystemMessage(content=prompt)])
+        return {"final_answer": response.content, "chart_image_path": state.get("chart_image_path")}
+
+    def handle_failure(self, state: AgentState):
         print("Node: handle_failure")
         error = state["error"]
-        answer = f"""I'm sorry, but I was unable to answer your question.
-        After several attempts, I encountered the following error:
-        {error}
-        Please try rephrasing your question."""
+        answer = f"I'm sorry, but I was unable to complete the plan. I encountered an error:\n`{error}`"
         return {"final_answer": answer}
 
     def update_chat_history(self, state: AgentState):
         print("Node: update_chat_history")
         chat_history = state["chat_history"]
         chat_history.append(HumanMessage(content=state["question"]))
-        assistant_message = state["final_answer"]
-        chat_history.append(AIMessage(content=assistant_message))
+        chat_history.append(AIMessage(content=state["final_answer"]))
         return {"chat_history": chat_history}
 
 
-def route_after_sql_execution(state: AgentState) -> str:
-    """Routes to the correct node based on SQL execution result."""
-    print("Node: route_after_sql_execution")
+def route_plan(state: AgentState):
+    """Routes the agent based on the plan."""
     if state.get("error"):
-        if state.get("retries", 0) >= MAX_RETRIES:
-            print("Max retries reached. Routing to handle_failure.")
-            return "handle_failure"
-        else:
-            print("SQL error detected. Routing back to generate_sql for correction.")
-            return "generate_sql"
+        return "handle_failure"
 
-    if state.get("intent") == "visualize_data":
-        return "execute_visualization"
-    return "generate_answer"
+    current_step = state.get("current_step", 0)
+    plan_length = len(state.get("plan", []))
+
+    if current_step >= plan_length:
+        print("Plan complete. Routing to generate_final_answer.")
+        return "generate_final_answer"
+    else:
+        print(f"Plan not complete. Routing to execute_step {current_step + 1}.")
+        return "execute_step"
 
 
-def build_agent_graph(df: pd.DataFrame, db_schema: str, table_name: str) -> StateGraph[AgentState]:
-    """Builds and compiles the LangGraph agent."""
-    llm = ChatOpenAI(model_name=LLM_MODEL, temperature=0)
+def build_agent_graph(df: pd.DataFrame, db_schema: str, table_name: str):
+    llm = ChatOpenAI(model=LLM_MODEL, temperature=0)
     sql_tool = SqlTool(df, table_name)
     vis_tool = VisualizationTool()
     nodes = AgentNodes(sql_tool, vis_tool, llm, db_schema)
 
     workflow = StateGraph(AgentState)
-    workflow.add_node("route_question", nodes.route_question)
-    workflow.add_node("generate_sql", nodes.generate_sql)
-    workflow.add_node("execute_sql", nodes.execute_sql)
-    workflow.add_node("execute_visualization", nodes.execute_visualization)
-    workflow.add_node("generate_answer", nodes.generate_answer)
+    workflow.add_node("planner", nodes.planner)
+    workflow.add_node("execute_step", nodes.execute_step)
+    workflow.add_node("generate_final_answer", nodes.generate_final_answer)
     workflow.add_node("handle_failure", nodes.handle_failure)
     workflow.add_node("update_chat_history", nodes.update_chat_history)
 
-    workflow.set_entry_point("route_question")
-
-    workflow.add_conditional_edges(
-        "route_question",
-        lambda s: s["intent"],
-        {"query_database": "generate_sql", "visualize_data": "generate_sql"},
-    )
-
-    workflow.add_edge("generate_sql", "execute_sql")
-    workflow.add_conditional_edges("execute_sql", route_after_sql_execution)
-    workflow.add_edge("execute_visualization", "generate_answer")
-    workflow.add_edge("generate_answer", "update_chat_history")
+    workflow.set_entry_point("planner")
+    workflow.add_conditional_edges("planner", route_plan)
+    workflow.add_conditional_edges("execute_step", route_plan)
+    workflow.add_edge("generate_final_answer", "update_chat_history")
     workflow.add_edge("handle_failure", "update_chat_history")
     workflow.add_edge("update_chat_history", END)
 
-    chat_graph = workflow.compile()
-
-    print(chat_graph.get_graph().draw_mermaid())
-
-    return chat_graph
+    return workflow.compile()

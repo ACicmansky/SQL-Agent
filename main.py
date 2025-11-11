@@ -1,9 +1,13 @@
 import os
 from pathlib import Path
 
+import pandas as pd
+
 from src.agent.graph import build_agent_graph
 from src.data.handler import get_schema_from_dataframe, load_data
 from src.ui.app import run_gradio_ui
+
+pd.options.display.float_format = "{:,.2f}".format
 
 
 def main():
