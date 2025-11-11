@@ -1,4 +1,5 @@
 import gradio as gr
+import base64
 from gradio import ChatMessage
 from langchain_core.messages import HumanMessage
 
@@ -49,7 +50,12 @@ def run_gradio_ui(ai_agent):
                 last_ai_message = final_history_list[-1]
                 ai_text_content = last_ai_message.content
 
-                display_content = (chart_path, ai_text_content) if chart_path else ai_text_content
+                if chart_path:
+                    with open(chart_path, "rb") as f:
+                        chart_data = f.read()
+                    chart_base64 = base64.b64encode(chart_data).decode("utf-8")
+
+                display_content = (f"<img src='data:image/png;base64,{chart_base64}' />\n\n{ai_text_content}") if chart_path else ai_text_content
 
                 final_display_history.append(ChatMessage(role="assistant", content=display_content))
 
